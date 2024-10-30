@@ -3,7 +3,7 @@
         {
             "name": "arm64",
             "includePath": [
-                "E:\NDK\android-ndk-r27/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",
+                "E:/NDK/android-ndk-r27/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",
                 "${workspaceFolder}/include"
             ],
             "defines": [
