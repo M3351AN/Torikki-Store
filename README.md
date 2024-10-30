@@ -5,3 +5,5 @@ KernelSU module used to read the umount application package name to automaticall
 [magiskModuleDev](https://github.com/jark006/magiskModuleDev/)
 
 [KernelSU](https://kernelsu.org/)
+
+[7-Zip](https://www.7-zip.org/)
