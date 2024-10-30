@@ -1,0 +1,7 @@
+id=torikki-store
+name=Torikki Store 
+version=Kanna dzuki
+versionCode=1001
+author=M3351AN@Github
+description=KernelSU module to automatically fill target.txt of Tricky Store with umounted application.
+updateJson=https://raw.githubusercontent.com/M3351AN/Torikki-Store/refs/heads/main/update.json

@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "name": "arm64",
+            "includePath": [
+                "E:\NDK\android-ndk-r27/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",
+                "${workspaceFolder}/include"
+            ],
+            "defines": [
+                "UNICODE",
+                "_UNICODE",
+                "NDEBUG",
+                "__linux__",
+                "__aarch64__",
+                "__ANDROID_MIN_SDK_VERSION__ 29",
+                "__ANDROID_API__ 29"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-clang-arm64",
+            "compilerArgs": [
+                "-static",
+                "-Wall"
+            ]
+        }
+    ],
+    "version": 4
+}
