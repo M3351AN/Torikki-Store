@@ -1,0 +1,33 @@
+name: Minify JS
+
+on:
+  push:
+    paths:
+      - 'magiskModule/webroot/ksu.js'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '14'
+
+    - name: Install UglifyJS
+      run: npm install uglify-js -g
+
+    - name: Minify JS file
+      run: uglifyjs magiskModule/webroot/ksu.js --compress --mangle --output magiskModule/webroot/ksu.min.js
+
+    - name: Commit and push if necessary
+      run: |
+        git config --global user.email "admin@tkm.icu"
+        git config --global user.name "Ukia"
+        git add magiskModule/webroot/ksu.min.js
+        git commit -m "Minified JS" || exit 0
+        git push
