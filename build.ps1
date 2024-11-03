@@ -24,7 +24,6 @@ $versionCode = Get-Content magiskModule/module.prop | Where-Object { $_ -match "
 $versionCode = $versionCode.split('=')[1]
 $zipFile = "${id}_${version}.zip"
 
-
 # 下载最新工具链
 # https://developer.android.com/ndk/downloads
 # https://github.com/android/ndk/wiki
@@ -61,6 +60,14 @@ if ( -not $? ) {
     exit
 }
 log "Packed: $zipFile"
+
+# 从压缩包中删除 webroot/ksu.js 文件
+& ./7za.exe d $zipFile webroot/ksu.js | Out-Null
+if ( -not $? ) {
+    log "Remove origin js from zip fail"
+    exit
+}
+log "Removed webroot/ksu.js from $zipFile"
 
 Remove-Item magiskModule/$id -Force
 
