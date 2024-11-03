@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        body {
+            background-color: #2b2b2b;
+            color: #a9b7c6;
+            font-family: Arial, sans-serif;
+        }
+        .app-item {
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px;
+            background-color: #3c3f41;
+        }
+        .app-item label {
+            margin-left: 10px;
+            font-size: 18px;
+        }
+        .app-item select, .app-item input[type="checkbox"] {
+            margin-left: 10px;
+            padding: 10px; 
+            font-size: 16px;
+            background-color: #3c3f41;
+            color: #a9b7c6;
+            border: 1px solid #555;
+        }
+        .app-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+        #save-button {
+            position: fixed;
+            bottom: 25%;
+            left: 20px;
+            padding: 20px 40px;
+            background-color: #4CAF50;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+        }
+        #save-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-list"></div>
+    <button id="save-button">Save</button>
+    <script type="module">
+        import { exec, readFile, writeFile, toast } from './ksu.js';
+
+        async function loadPackages() {
+            try {
+                const packagesResult = await exec('pm list packages');
+                if (packagesResult.errno !== 0) {
+                    throw new Error(packagesResult.stderr);
+                }
+                const packageList = packagesResult.stdout.split('\n').map(pkg => pkg.replace('package:', '').trim()).filter(pkg => pkg);
+
+                const targetPackagesResult = await readFile('/data/adb/tricky_store/target.txt');
+                const targetPackages = targetPackagesResult.split('\n').map(pkg => pkg.trim()).filter(pkg => pkg);
+
+                const appListDiv = document.getElementById('app-list');
+                packageList.forEach(pkg => {
+                    const isLeafHackMode = targetPackages.includes(`${pkg}!`);
+                    const isGenerateCertificateSupport = targetPackages.includes(`${pkg}?`);
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = pkg;
+                    checkbox.checked = targetPackages.includes(pkg) || isLeafHackMode || isGenerateCertificateSupport;
+
+                    const label = document.createElement('label');
+                    label.htmlFor = pkg;
+                    label.textContent = pkg;
+
+                    const comboBox = document.createElement('select');
+                    comboBox.id = `${pkg}-mode`;
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = 'default';
+                    defaultOption.text = 'Default';
+                    const leafHackModeOption = document.createElement('option');
+                    leafHackModeOption.value = 'leafHackMode';
+                    leafHackModeOption.text = 'Leaf Hack Mode';
+                    const generateCertificateSupportOption = document.createElement('option');
+                    generateCertificateSupportOption.value = 'generateCertificateSupport';
+                    generateCertificateSupportOption.text = 'Generate Certificate Support';
+
+                    comboBox.appendChild(defaultOption);
+                    comboBox.appendChild(leafHackModeOption);
+                    comboBox.appendChild(generateCertificateSupportOption);
+
+                    if (isLeafHackMode) {
+                        comboBox.value = 'leafHackMode';
+                    } else if (isGenerateCertificateSupport) {
+                        comboBox.value = 'generateCertificateSupport';
+                    } else {
+                        comboBox.value = 'default';
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = 'app-item';
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    div.appendChild(comboBox);
+
+                    appListDiv.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading packages:', error);
+                toast(`Error loading packages: ${error.message}`);
+            }
+        }
+
+        async function savePackages() {
+            try {
+                const checkboxes = document.querySelectorAll('#app-list input[type="checkbox"]');
+                const selectedPackages = Array.from(checkboxes)
+                    .filter(checkbox => checkbox.checked)
+                    .map(checkbox => {
+                        const pkg = checkbox.id;
+                        const comboBox = document.getElementById(`${pkg}-mode`);
+                        if (comboBox.value === 'leafHackMode') {
+                            return `${pkg}?`;
+                        } else if (comboBox.value === 'generateCertificateSupport') {
+                            return `${pkg}!`;
+                        } else {
+                            return pkg;
+                        }
+                    })
+                    .join('\n');
+
+                await writeFile('/data/adb/tricky_store/target.txt', selectedPackages);
+                toast('Saved success!');
+            } catch (error) {
+                console.error('Error saving packages:', error);
+                toast(`Error saving packages: ${error.message}`);
+            }
+        }
+
+        document.getElementById('save-button').addEventListener('click', savePackages);
+
+        window.addEventListener('load', loadPackages);
+    </script>
+</body>
+</html>

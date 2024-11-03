@@ -1,162 +1,192 @@
-#include "utils.h"
 #include "prop.h"
+#include "utils.h"
 
-// 未来可能需要更新？但是ksu好像并没有改变过这些，所以硬编码了
-#define FILE_MAGIC 0x7f4b5355 // ' KSU', u32
-#define FILE_FORMAT_VERSION 3 // u32
-#define KSU_MAX_PACKAGE_NAME 256
+namespace fs = std::filesystem;
 
-struct RootProfile {
-    int32_t uid;
-    int32_t gid;
-    int32_t groups_count;
-    int32_t groups[32];
-    struct {
-        uint64_t effective;
-        uint64_t permitted;
-        uint64_t inheritable;
-    } capabilities;
-    char selinux_domain[64];
-    int32_t namespaces;
-};
+// 全局变量存储吊销列表
+std::vector<std::string> crl_entries;
 
-struct NonRootProfile {
-    bool umount_modules;
-};
-
-struct AppProfile {
-    uint32_t version;
-    char key[KSU_MAX_PACKAGE_NAME];
-    int32_t current_uid;
-    bool allow_su;
-    union {
-        struct {
-            bool use_default;
-            char template_name[KSU_MAX_PACKAGE_NAME];
-            RootProfile profile;
-        } rp_config;
-        struct {
-            bool use_default;
-            NonRootProfile profile;
-        } nrp_config;
-    };
-};
-
-std::vector<AppProfile> allow_list;
-bool default_umount = false;
-
-// 在这里读取.allowlist文件
-void LoadAllowList(const std::string &filename) {
-    std::ifstream file(filename, std::ios::binary);
-    if (!file) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        exit(1);
+// 执行系统命令并获取输出
+std::string ExecCommand(const std::string& cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
     }
-
-    uint32_t magic, version;
-    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    file.read(reinterpret_cast<char*>(&version), sizeof(version));
-
-    if (magic != FILE_MAGIC || version != FILE_FORMAT_VERSION) {
-        std::cerr << "Invalid file format" << std::endl;
-        exit(2);
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
     }
-
-    while (file) {
-        AppProfile profile;
-        file.read(reinterpret_cast<char*>(&profile), sizeof(profile));
-
-        if (file) {
-            allow_list.push_back(profile);
-        }
-    }
-
-    std::cout << "Loaded " << allow_list.size() << " profiles from allowlist." << std::endl;
+    return result;
 }
 
-// 在这里检查是否默认umount，通过读取配置文件config.txt实现
-void LoadConfig(const std::string &filename) {
-    int value = readInt(filename.c_str());
-    default_umount = (value == 1);
-}
+// 获取吊销列表
+bool GetCrl() {
+    std::string cmd = "curl -X GET 'https://android.googleapis.com/attestation/status'";
+    std::string json_response = ExecCommand(cmd);
 
-// 在这里检查包名
-bool CheckPackage(const std::string &package) {
-    // ksu管理器本身是不umount的
-    if (package == "me.weishu.kernelsu") {
+    // 使用正则表达式查找吊销的序列号
+    std::regex re("\"([^\"]+)\"\\s*:\\s*\\{\\s*\"status\"\\s*:\\s*\"REVOKED\"");
+    std::smatch match;
+    std::string::const_iterator searchStart(json_response.cbegin());
+    while (std::regex_search(searchStart, json_response.cend(), match, re)) {
+        crl_entries.push_back(match.str(1));
+        searchStart = match.suffix().first;
+    }
+
+    if (crl_entries.empty()) {
+        std::cout << "! Error: No revoked certificates found" << std::endl;
         return false;
     }
 
-    for (const auto &profile : allow_list) {
-        if (std::strcmp(profile.key, package.c_str()) == 0) {
-            if (profile.allow_su) {
-                return false;
-            } else if (profile.nrp_config.profile.umount_modules) {
-                return true;
-            } else if (profile.nrp_config.use_default) {
-                return default_umount;
-            } else {
-                return false;
-            }
+    // 保存吊销列表到本地文件
+    std::ofstream crl_cache("crl_cache.txt");
+    for (const auto& entry : crl_entries) {
+        crl_cache << entry << std::endl;
+    }
+    crl_cache.close();
+
+    return true;
+}
+
+// 从本地缓存加载吊销列表
+void LoadCrlFromCache() {
+    std::ifstream file("crl_cache.txt");
+    if (!file.is_open()) {
+        std::cout << "! Error: Unable to open crl_cache.txt" << std::endl;
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        crl_entries.push_back(line);
+    }
+    file.close();
+}
+
+// 解析证书并返回序列号
+std::string ParseCert(const std::string& cert_str) {
+    std::string cmd = "curl -X POST 'https://myssl.com/api/v1/tools/cert_decode' "
+                      "-H 'User-Agent: Sukaaretto' "
+                      "-F 'cert=" + cert_str + "' "
+                      "-F 'type=paste'";
+
+    std::string json_response = ExecCommand(cmd);
+
+    // 使用正则表达式查找序列号
+    std::regex re_sn("\"sn\":\"([^\"]+)\"");
+    std::smatch match;
+    if (std::regex_search(json_response, match, re_sn) && match.size() > 1) {
+        return match.str(1);
+    } else {
+        std::cout << "! Error: Serial number not found" << std::endl;
+        return "";
+    }
+}
+
+// 手动解析 XML 文件并获取证书内容
+std::vector<std::string> ParseXML(const std::string& xml_file) {
+    std::ifstream file(xml_file);
+    if (!file.is_open()) {
+        std::cout << "! Error: Unable to open file " << xml_file << std::endl;
+        return {};
+    }
+
+    std::vector<std::string> certs;
+    std::string line;
+    std::string cert;
+    bool in_cert = false;
+
+    while (std::getline(file, line)) {
+        if (line.find("<Certificate") != std::string::npos) {
+            in_cert = true;
+            cert.clear();
+        } else if (line.find("</Certificate>") != std::string::npos) {
+            in_cert = false;
+            certs.push_back(cert);
+        } else if (in_cert) {
+            cert += line + "\n";
         }
     }
-    return default_umount;
+
+    file.close();
+    return certs;
+}
+bool is_aosp;
+// 检查证书是否被吊销
+bool CheckIfRevoked(const std::string& xml_file) {
+    std::ifstream file(xml_file);
+    if (!file.is_open()) {
+        std::cout << "! Error: Unable to open file " << xml_file << std::endl;
+        return true;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("<Keybox DeviceID=\"sw\">") != std::string::npos) {
+            std::cout << "- Keybox is signed with AOSP cert!" << std::endl;
+            is_aosp = true;
+            return false;
+        }
+    }
+
+    file.close();
+
+    std::vector<std::string> certs = ParseXML(xml_file);
+
+    if (certs.empty()) {
+        std::cout << "! Error: No certificates found in " << xml_file << ". Skipping..." << std::endl;
+        return false;
+    }
+
+    std::string ec_cert_sn = ParseCert(certs[0]);
+    std::string rsa_cert_sn = ParseCert(certs[3]);
+
+    std::cout << "EC Cert SN: " << ec_cert_sn << std::endl;
+    std::cout << "RSA Cert SN: " << rsa_cert_sn << std::endl;
+
+    if (std::find(crl_entries.begin(), crl_entries.end(), ec_cert_sn) != crl_entries.end() ||
+        std::find(crl_entries.begin(), crl_entries.end(), rsa_cert_sn) != crl_entries.end()) {
+        std::cout << "- Certificate is revoked." << std::endl;
+        return true;
+    }
+
+    return false;
 }
 
 int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " <xml_file>" << std::endl;
+        return 1;
+    }
+
     // 可执行文件和模块属性文件在同一目录
-    Prop moduleProp(parentDir(string(argv[0])) + "/module.prop");
+    Prop module_prop(parentDir(std::string(argv[0])) + "/module.prop");
 
-    // 这里读取的.allowlist(应该)是只有KSU有的
-    std::string allowlist_path = "/data/adb/ksu/.allowlist";
-    std::string config_path = parentDir(string(argv[0])) + "/default_umount.txt";
-    std::string dump_path = "/data/adb/tricky_store/target.txt"; // 这算不算一种僭越呢？(笑)
-
-    LoadAllowList(allowlist_path);
-    LoadConfig(config_path);
-
-    // 获取 target.txt 的行数
-    int origin = countLines(dump_path);
-
-    FILE *fp = popen("pm list packages", "r"); // 执行pm list packages命令，用于获取所有已安装的应用，如果要排除系统应用，加上 “-3”, 但是在大多数rom中gms是系统应用，所以不排除
-    if (fp == NULL) {
-        std::cerr << "Failed to run pm list packages" << std::endl;
-        return 5;
+    bool crl_fetched = GetCrl();
+    if (!crl_fetched) {
+        LoadCrlFromCache();
     }
 
-    std::ofstream dump_file(dump_path);
-    if (!dump_file) {
-        std::cerr << "Failed to open dump file: " << dump_path << std::endl;
-        return 6;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), fp) != NULL) {
-        std::string package(line);
-        package = package.substr(8); // 删除前缀 "package:"
-        package.erase(package.find_last_not_of(" \n\r\t") + 1); // 去除尾部的空白字符
-
-        bool result = CheckPackage(package);
-        if (result) {
-            dump_file << package << std::endl; // 在这里将所有需要umount的应用包名写入target.txt
-        }
-    }
-
-    pclose(fp);
-    dump_file.close();
-
-    // 获取刷新后 target.txt 的行数
-    int count = countLines(dump_path);
-
+    std::string xml_file = argv[1];
+    bool is_revoked = CheckIfRevoked(xml_file);
+    std::string origin_description = module_prop["info"];
     // 更新描述
     std::string new_description;
-    if (count == 0) {
-        new_description = "[😥0 app umounted?]";
+    if (is_revoked) {
+        new_description = "[😥Keybox cert revoked!]" + origin_description;
+        std::cout << "! Keybox cert revoked!" << std::endl;
+    } else if (is_aosp) {
+        new_description = "[🤤Keybox signed with AOSP cert!]" + origin_description;
+        std::cout << "- Keybox signed with AOSP cert!" << std::endl;
+    } else if (!crl_fetched) {
+        new_description = "[😉Plz fetch CRL with stable network connection!]" + origin_description;
+        std::cout << "! Plz fetch CRL with stable network connection!" << std::endl;
     } else {
-        new_description = "[😋" + std::to_string(count) + " apps in list. Added " + std::to_string(count - origin) + " apps.] いいこと？暁の水平線に勝利を刻みなさいっ！";
+        new_description = "[😋Keybox valid!]" + origin_description;
+        std::cout << "- Keybox valid!" << std::endl;
     }
-    moduleProp["description"] = new_description;
-    moduleProp.save2file(); // 保存到 module.prop
-
+    module_prop["description"] = new_description;
+    module_prop.save2file(); // 保存到 module.prop
     return 0;
 }

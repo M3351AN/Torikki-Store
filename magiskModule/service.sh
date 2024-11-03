@@ -1,5 +1,4 @@
-#!/system/bin/sh
-MODDIR=${0%/*}
-
+MODPATH="${0%/*}"
 sleep 15
-$MODDIR/torikki-store
+# 检查Keybox证书状态
+$MODPATH/torikki-store /data/adb/tricky_store/keybox.xml

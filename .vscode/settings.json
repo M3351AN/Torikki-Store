@@ -98,6 +98,14 @@
         "xloctime": "cpp",
         "xmemory": "cpp",
         "xtr1common": "cpp",
-        "xtree": "cpp"
+        "xtree": "cpp",
+        "execution": "cpp",
+        "numeric": "cpp",
+        "print": "cpp",
+        "queue": "cpp",
+        "ranges": "cpp",
+        "span": "cpp",
+        "variant": "cpp",
+        "__verbose_abort": "cpp"
     }    
 }

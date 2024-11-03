@@ -14,6 +14,10 @@
 #include <limits>
 #include <set>
 #include <map>
+#include <filesystem>
+#include <algorithm>
+#include <regex>
+#include <stdexcept>
 
 #include <cstdio>
 #include <cerrno>

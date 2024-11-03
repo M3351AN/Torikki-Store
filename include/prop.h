@@ -15,6 +15,7 @@ private:
     {"author", "Unknown"},
     {"description", "Unknown"},
     {"updateJson", "Unknown"},
+    {"info", "Unknown"}// 额外添加的，用于在descreption前加入一些信息而保留原有的模块描述
   };
 
 public:
@@ -58,9 +59,9 @@ public:
       return false;
 
     char tmp[2048];
-    size_t len = snprintf(tmp, 2048, "id=%s\nname=%s\nversion=%s\nversionCode=%s\nauthor=%s\ndescription=%s\nupdateJson=%s\n",
+    size_t len = snprintf(tmp, 2048, "id=%s\nname=%s\nversion=%s\nversionCode=%s\nauthor=%s\ndescription=%s\nupdateJson=%s\ninfo=%s\n",
       prop["id"].c_str(), prop["name"].c_str(), prop["version"].c_str(), prop["versionCode"].c_str(),
-      prop["author"].c_str(), prop["description"].c_str(), prop["updateJson"].c_str());
+      prop["author"].c_str(), prop["description"].c_str(), prop["updateJson"].c_str(),prop["info"].c_str());
 
     size_t writeLen = fwrite(tmp, 1, len, fp);
     fclose(fp);

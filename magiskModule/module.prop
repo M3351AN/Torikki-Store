@@ -1,7 +1,8 @@
 id=torikki-store
 name=Torikki Store 
-version=Kanna dzuki -R
-versionCode=1002
+version=Shimo tsuki
+versionCode=1003
 author=M3351AN@Github
-description=KernelSU module to automatically fill target.txt of Tricky Store with umounted application.
+description=KernelSU module to fill target.txt of Tricky Store with Web UI. Also auto check if keybox valid
 updateJson=https://raw.githubusercontent.com/M3351AN/Torikki-Store/refs/heads/main/update.json
+info=いいこと？暁の水平線に勝利を刻みなさいっ！
